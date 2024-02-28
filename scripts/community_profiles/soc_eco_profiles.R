@@ -68,5 +68,45 @@ all_eco <- merge(own_jur, lc, by = 'Name')
 eco_sf <- st_write(all_eco, "data/int_data/biophys_vars.shp")
 
 #social
+cales <- st_read("data/raw_data/calenviroscreen/CES4 Final Shapefile.shp")
+st_crs(cales) == st_crs(cwpps)
+st_is_valid(cales, reason = T)
+cales <- st_make_valid(cales)
+cales <- st_transform(cales, crs = st_crs(cwpps))
 
+cales_cwpp <- st_intersection(cwpp_exp, cales) %>%
+  select(Name, County, CIscore, CIscoreP) %>%
+  group_by(Name) %>%
+  summarize(avg_CI = mean(CIscore)) %>%
+  st_drop_geometry()
 
+eco_soc <- merge(all_eco, cales_cwpp, by = 'Name')
+
+#census
+
+#download acs data
+census_api_key("77b4aae9e134b43d2edeb8aabb1ceb4713fe8a2a", install = TRUE, overwrite = TRUE)
+readRenviron("~/.Renviron")
+v20 <- load_variables(2020, "acs5", cache = TRUE)
+ca_census <- get_acs(geography = "tract",year = 2020, state = 'CA',
+                        variables = c('B01003_001',
+                                      'B17001_002',
+                                      'B23025_005',
+                                      'B19013_001',
+                                      'B25024_010',
+                                      'B25024_002',
+                                      'B25003_003',
+                                      'B16004_012',
+                                      'B15003_017'))
+    # #next rename vars
+    #                       total pop = 'B01003_001',
+    #                      below_pov = 'B17001_002',
+    #                       unemp = 'B23025_005',
+    #                                   med_inc = 'B19013_001',
+    #                                   mob_home = 'B25024_010',
+    #                                   mult_hous = 'B25024_002',
+    #                                   rent_units = 'B25003_003',
+    #                                   bad_eng = 'B16004_012',
+    #                                   no_hs = 'B15003_017'))
+    #                                   #add age pop, disability, single parent
+                            
