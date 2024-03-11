@@ -20,18 +20,17 @@ conus <- rast("data/raw_data/LF2022_EVT_230_CONUS/Tif/LC22_EVT_230.tif")
 #conus key, keep just generalized lc type
 conus_key <- read_csv("data/raw_data/LF2022_EVT_230_CONUS/CSV_Data/LF22_EVT_230.csv") %>%
   select(c(value = VALUE, lc = EVT_PHYS))
-# dbf <- foreign::read.dbf("data/raw_data/LF2022_EVT_230_CONUS/Tif/LC22_EVT_230.tif.vat.dbf", as.is = T) %>%
-#   select(value = Value, class = EVT_PHYS)
 st_crs(conus) == st_crs(cwpps) #TRUE
 conus <- crop(conus, ext(cwpps)) 
 levels(conus) <- conus_key 
-
+#summarize categorical raster -- get conus values and coverage fractions for conus pixel in each cwpp, then get fraction of each cwpp of each lc
 lc <- exact_extract(conus, cwpps, fun = function(df) {
   df %>%
     mutate(frac_total = coverage_fraction / sum(coverage_fraction)) %>%
-    group_by(Name, value) %>%
+    group_by(Name, value) %>% #include name so it does not get lost when summarize
     summarize(frac_lc = sum(frac_total)) 
  }, summarize_df = TRUE, include_cols = 'Name', progress = FALSE)
+
 
 lc <- lc %>%
   inner_join(conus_key, by = 'value') %>%
