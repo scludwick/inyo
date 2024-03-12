@@ -26,7 +26,7 @@ toks <- tokens(recorp, remove_punct = TRUE, remove_symbols = TRUE, remove_number
 
 #### NOTE HERE WE PROBS WANT TO COMPOUNDS SOME IMPORTANT NGRAMS (E.G., DEFENSIBLE SPACE)
 comp_words <- c('defensible space', 'fuel break', 'building standards', 'residential development')
-toks_comp <- quanteda::tokens_compound(toks, pattern = phrase(comp_words), case_insensitive = T)
+toks <- quanteda::tokens_compound(toks, pattern = phrase(comp_words), case_insensitive = T)
 # kw_comp <- kwic(toks_comp, pattern = phrase(c(str_replace(comp_words, " ", "_"))))
 # head(kw_comp, 25)
 
