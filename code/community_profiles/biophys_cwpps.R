@@ -72,9 +72,9 @@ own_jur <- merge(own, cwpps, by = 'Name', all = T) %>%
 
 #merge 
 cwpp_phys <- merge(own_jur, lc_sel, by = 'Name', all = T)
+cwpp_phys <- merge(cwpp_phys, cwpps[ , c('Name', 'mean_exp')], by = 'Name')
 cwpp_phys <- st_write(cwpp_phys, "data/int_data/cwpp_vars/cwpp_phys.shp", append = F)
 
 # need per year !!!!!!!!!!!!!!! 
 # add SVI percentiles
-
 
