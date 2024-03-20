@@ -2,26 +2,20 @@ packages <- c('terra', 'sf', 'dplyr', 'readr', 'exactextractr', 'foreign', 'tidy
 lapply(packages, library, character.only=TRUE)
 
 #cwpp polygon shapefile of 182 CWPP boundaries
-cwpps <- st_read("data/raw_data/cwpp_boundaries/CA.shp") 
-st_is_valid(cwpps, reason = T)
-cwpps <- st_make_valid(cwpps)
+cwpps <- st_read("data/int_data/cwpps_transformed.shp") 
 ###############exposure data
 exp <- rast("large_data/fire_risk_comm_CA/Exposure_CA.tif")
-#check and make valid geometry to address rings
-#match cwpp crs to raster
-cwpps <- st_transform(cwpps, crs = st_crs(exp))
+# st_crs(exp) == st_crs(cwpps) #TRUE
 #extract mean exposure per cwpp boundary
 cwpps$mean_exp <- exact_extract(exp, cwpps$geometry, fun = 'mean')
 cwpps <- cwpps %>%
-  select(Name, mean_exp) %>%
-  st_drop_geometry()
+  select(Name, mean_exp) 
 
 ##############land cover type/conus
 conus <- rast("data/int_data/landfire/evt2016ca.tif")
 conus_key <- read.csv("data/int_data/landfire/evt2016ca.csv")
 #conus key, keep just generalized lc type
-st_crs(conus) == st_crs(cwpps) #TRUE
-conus <- crop(conus, ext(cwpps)) 
+# st_crs(conus) == st_crs(cwpps) #TRUE
 #summarize categorical raster -- get conus values and coverage fractions for conus pixel in each cwpp, then get fraction of each lc type by dividing coverage fraction by all cov fractions in poly, then sum per lc value https://www.dante-project.org/vignettes/exactextractr-cat
 lc <- exact_extract(conus, cwpps, fun = function(df) {
   df %>%
@@ -51,36 +45,33 @@ lc_sel <- lc %>%
   select(c(`Name`, `Conifer`, `Shrubland`, `Hardwood`, `Grassland`, `allDev`))
 
 
-
 ############### land ownership
-ownership <- st_read("data/raw_data/California_Land_Ownership/ownership22_1.shp")
-st_crs(ownership) == st_crs(cwpps) #FALSE
-ownership <- st_transform(ownership, crs = st_crs(cwpps))
-# st_is_valid(ownership) #TRUE
+ownership <- st_read("data/int_data/ownership_transformed.shp")
+# st_crs(ownership) == st_crs(cwpps) #TRUE
 
 #get area of each landowner type within cwpp boundaries
 own <- st_intersection(cwpps, ownership) %>%
-  mutate(intersect_area = st_area(.))%>% # create new column with shape area of intersecting polys 
+  mutate(intersect_area = st_area(.))%>% # create new column with shape area of intersecting polys
   select(Name, OWN_LEVEL, intersect_area) %>%
   group_by(Name, OWN_LEVEL) %>%
   summarize(owner_area = sum(intersect_area)) %>%
   st_drop_geometry()
-length(unique(own$Name)) #177 plans only
-missing <- cwpps[!cwpps$Name %in% own$Name,]
-missing # all comm plans, prob all private??
+# length(unique(own$Name)) #177 plans only
+# missing <- cwpps[!cwpps$Name %in% own$Name,]
+# missing # all comm plans, prob all private??
 
-#get area of cwpp jur
+#get area of ownership per area of cwpp
 cwpps$jur_area <- st_area(cwpps)
-
 own_jur <- merge(own, cwpps, by = 'Name', all = T) %>%
   mutate(own_percent = round(((owner_area / jur_area)*100), 3)) %>%
-  select(Name, OWN_LEVEL, own_percent, geometry) %>%
+  select(Name, OWN_LEVEL, own_percent) %>%
   group_by(Name) %>%
   mutate(public_percent = sum(own_percent)) %>%
-  pivot_wider(names_from = OWN_LEVEL, values_from = own_percent)
+  pivot_wider(names_from = OWN_LEVEL, values_from = own_percent) %>%
+  select(-'NA') 
 
-cwpp_phys <- merge(own_jur, lc_select, by = 'Name', all = T)
-cwpp_phys <- merge(cwpp_phys, cwpps, by = 'Name', all = T)
+#merge 
+cwpp_phys <- merge(own_jur, lc_sel, by = 'Name', all = T)
 cwpp_phys <- st_write(cwpp_phys, "data/int_data/cwpp_vars/cwpp_phys.shp", append = F)
 
 # need per year !!!!!!!!!!!!!!! 
