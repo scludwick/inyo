@@ -13,13 +13,13 @@ cwpps <- st_transform(cwpps, crs = st_crs(exp))
 #extract mean exposure per cwpp boundary
 cwpps$mean_exp <- exact_extract(exp, cwpps$geometry, fun = 'mean')
 cwpps <- cwpps %>%
-  select(Name, Jur, mean_exp, geometry)
+  select(Name, mean_exp) %>%
+  st_drop_geometry()
 
 ##############land cover type/conus
-conus <- rast("data/raw_data/LF2022_EVT_230_CONUS/Tif/LC22_EVT_230.tif")
+conus <- rast("data/int_data/landfire/evt2016ca.tif")
+conus_key <- read.csv("data/int_data/landfire/evt2016ca.csv")
 #conus key, keep just generalized lc type
-conus_key <- read_csv("data/raw_data/LF2022_EVT_230_CONUS/CSV_Data/LF22_EVT_230.csv") %>%
-  select(c(value = VALUE, lc = EVT_PHYS))
 st_crs(conus) == st_crs(cwpps) #TRUE
 conus <- crop(conus, ext(cwpps)) 
 #summarize categorical raster -- get conus values and coverage fractions for conus pixel in each cwpp, then get fraction of each lc type by dividing coverage fraction by all cov fractions in poly, then sum per lc value https://www.dante-project.org/vignettes/exactextractr-cat
@@ -34,7 +34,7 @@ lc <- exact_extract(conus, cwpps, fun = function(df) {
 
 
 #join to key and get lc percent. dupe lc because this is coarse phys desc., so summarize those
-lc_p <- lc %>%
+lc_sel <- lc %>%
   inner_join(conus_key, by = 'value') %>%
   group_by(Name, lc) %>%
   summarize(sum_lc = sum(frac_lc), na.rm = F) %>%
@@ -43,17 +43,12 @@ lc_p <- lc %>%
   ungroup() %>%
   select(-c(sum_lc)) %>%
   group_by(Name) %>%
-  pivot_wider(names_from = lc, values_from = lc_percent) %>% #will want to reduce these later
-  ungroup()
-# length(unique(lc_p$Name)) #179
-
-### NEED TO FIGURE OUT how to get missing LC for NE CA
-missing <- lc[!lc$Name %in% lc_p$Name,]
-missing # no lc data for these polys
-miss_cw <- cwpps[!cwpps$Name %in% lc_p$Name,]
-plot(conus) #missing a chunk where these are!!! whyyyyyyyy 
-plot(miss_cw)
-# no conus values for these polys 
+  pivot_wider(names_from = lc, values_from = lc_percent) %>% 
+  ungroup() %>%
+  #trying it out condensing and reducing categories
+  mutate(allDev = select(., starts_with("Develop")) %>% 
+           rowSums(na.rm = T)) %>%
+  select(c(`Name`, `Conifer`, `Shrubland`, `Hardwood`, `Grassland`, `allDev`))
 
 
 
@@ -70,9 +65,9 @@ own <- st_intersection(cwpps, ownership) %>%
   group_by(Name, OWN_LEVEL) %>%
   summarize(owner_area = sum(intersect_area)) %>%
   st_drop_geometry()
-# length(unique(own$Name)) #177 
-# missing <- cwpps[!cwpps$Name %in% own$Name,]
-# missing # all comm plans, prob all private
+length(unique(own$Name)) #177 plans only
+missing <- cwpps[!cwpps$Name %in% own$Name,]
+missing # all comm plans, prob all private??
 
 #get area of cwpp jur
 cwpps$jur_area <- st_area(cwpps)
@@ -83,11 +78,12 @@ own_jur <- merge(own, cwpps, by = 'Name', all = T) %>%
   group_by(Name) %>%
   mutate(public_percent = sum(own_percent)) %>%
   pivot_wider(names_from = OWN_LEVEL, values_from = own_percent)
-### should i make NAs zero for those 5 plans? 
 
+cwpp_phys <- merge(own_jur, lc_select, by = 'Name', all = T)
+cwpp_phys <- merge(cwpp_phys, cwpps, by = 'Name', all = T)
+cwpp_phys <- st_write(cwpp_phys, "data/int_data/cwpp_vars/cwpp_phys.shp", append = F)
 
-all_eco <- merge(own_jur, lc_p, by = 'Name', all = T)
-eco_sf <- st_write(all_eco, "data/int_data/biophys_vars.shp", append = F)
+# need per year !!!!!!!!!!!!!!! 
+# add SVI percentiles
 
-eco <- st_read("data/int_data/biophys_vars.shp")
 
