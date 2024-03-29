@@ -42,7 +42,7 @@ lc_sel <- lc %>%
   #trying it out condensing and reducing categories
   mutate(allDev = select(., starts_with("Develop")) %>% 
            rowSums(na.rm = T)) %>%
-  select(c(`Name`, `Conifer`, `Shrubland`, `Hardwood`, `Grassland`, `allDev`))
+  select(c(Name, Conifer, Shrubland, Hardwood, Grassland, allDev))
 
 
 ############### land ownership
@@ -58,20 +58,24 @@ own <- st_intersection(cwpps, ownership) %>%
   st_drop_geometry()
 # length(unique(own$Name)) #177 plans only
 # missing <- cwpps[!cwpps$Name %in% own$Name,]
-# missing # all comm plans, prob all private??
+# missing # all comm plans, prob all private?? will add back later when merging
 
 #get area of ownership per area of cwpp
 cwpps$jur_area <- st_area(cwpps)
-own_jur <- merge(cwpps, own, by = 'Name', all = T) %>%
+own <- merge(cwpps, own, by = 'Name', all = T) %>%
   mutate(own_frac = owner_area / jur_area) %>%
   select(Name, mean_exp, mean_rps, mean_whp, OWN_LEVEL, own_frac) %>%
   group_by(Name) %>%
   filter(!OWN_LEVEL %in% c("Tribal", "Non Profit")) %>%
-  mutate(all_public = sum(own_frac)) %>% 
-  select(Name, mean_exp, mean_rps, mean_whp, all_public) 
+  mutate(all_public = sum(own_frac)) %>%
+  select(Name, mean_exp, mean_rps, mean_whp, all_public) %>%
+  unique() %>%
+  st_drop_geometry()
 
 #merge 
-cwpp_phys <- merge(own_jur, lc_sel, by = 'Name', all = T)
+# add back missings
+cwpp_phys <- merge(cwpps, own, all = T) #gives NA to jurs with no public
+cwpp_phys <- merge(cwpp_phys, lc_sel, all = T) 
 cwpp_phys <- st_write(cwpp_phys, "data/int_data/cwpp_vars/cwpp_phys.shp", append = F)
 
 
@@ -86,7 +90,7 @@ svi <- find_svi(year = 2015, state = 'CA', geography = "tract")
 # Household Characteristics – RPL_THEME2
 # Racial & Ethnic Minority Status – RPL_THEME3
 # Housing Type & Transportation – RPL_THEME4
-library(tigris) #get tract geom
+#get tract geom
 tracts <- tracts("CA", cb = TRUE, year = 2015)
 svi_census <- merge(tracts[c('GEOID', 'geometry')], svi, by = 'GEOID') 
 ##get census tracts in cwpp polys
@@ -100,13 +104,10 @@ themes <- st_intersection(svi_census, cwpp_phys) %>%
   group_by(Name) %>%
   summarize(across(c(RPL_theme1, RPL_theme2, RPL_theme3, RPL_theme4), ~mean(., na.rm = TRUE))) %>%
   ungroup() %>%
-  st_drop_geometry()
+  st_drop_geometry() 
 
-all_vars <- merge(cwpp_phys, themes, by = 'Name')
+all_vars <- merge(cwpp_phys, themes, all = T)
 all_write <- st_write(all_vars, "data/int_data/cwpp_vars/all_vars.shp", append = F)
-all_analysis <- all_vars[is.na(all_vars)] <- 0
-all_analysis <- st_drop_geometry(all_vars) 
-
 
 
 
