@@ -34,14 +34,18 @@ sents_func <- function(sents) {
 }
 #trying 
 sents <- lapply(sent_toks, sents_func)
+#removing empty sentences
 sents <- lapply(sents, function(sents) sents[lengths(sents) > 0])
+#removing very short or empty docs with fewer than 20 sentences until I can fix those docs
+sents <- sents[!lengths(sents) < 20]
 
-recorp <- sapply(sent_toks,paste,collapse =' ')
+
+recorp <- sapply(sents,paste,collapse =' ')
 recorp <- quanteda::corpus(recorp)
 toks <- tokens(recorp, remove_punct = TRUE, remove_symbols = TRUE, remove_number = TRUE)
 
 #### COMPOUND SOME IMPORTANT NGRAMS (E.G., DEFENSIBLE SPACE)
-comp_words <- c('defensible space*', 'fuel break*', 'building standard*', 'residential development*', 'emergency response*', 'emergency service*', 'cal fire', 'fire safe council*', 'water supply')
+comp_words <- c('defensible space*', 'fuel break*', 'building standard*', 'building code*', 'residential development*', 'emergency response*', 'emergency service*', 'cal fire', 'fire safe council*', 'water supply', 'home harden*')
 toks <- quanteda::tokens_compound(toks, pattern = phrase(comp_words), case_insensitive = T)
 # kw_comp <- kwic(toks, pattern = phrase(c(str_replace(comp_words, " ", "_"))))
 # head(kw_comp, 25)
@@ -60,10 +64,11 @@ names <- names[!names %in% c("lake", "creek", "slope")]
 dfmt <- dfm(toks) %>%
   dfm_remove(c(stopwords("en"), names), min_nchar = 3) %>%
   ## needs to be in at least 10 docs 
-  dfm_trim(min_docfreq = 10, max_docfreq = 230, docfreq_type = "count") 
+  dfm_trim(min_docfreq = 5, max_docfreq = 210, docfreq_type = "count") 
 
 #temporary dictionaries, need to discuss how many terms per topic and refine topics
 mgmt_dict <- dictionary(list(defensible_space = c("defensible_space"),
+                             home_hardening =c("home_harden*"),
                                    fuelbreak = c("fuelbreak", "fuel_break"),
                                    thinning = c("thin*",'brushing'),
                                    prescribed = c("prescribed", "beneficial"),
@@ -71,7 +76,7 @@ mgmt_dict <- dictionary(list(defensible_space = c("defensible_space"),
                                    landscaping = c('landscap*'),
                              #not sure water is a management strategy?
                                    water = c("water*", "water_supply"),
-                                   code = c('code','building_standard*'),
+                                   code = c('code*','building_standard*'),
                                    develop = c("residential*", "structur*")))
 
 implmnt_dict <- dictionary(list(recruit = c("retain","recruit","volunteer"),
@@ -79,59 +84,69 @@ implmnt_dict <- dictionary(list(recruit = c("retain","recruit","volunteer"),
                                       evac = c("evacuat*"),
                                       firewise = c("firewise"),
                                       programs = c("program*"),
-                                      comms = c("communicat*")))
+                                      comms = c("communicat*"),
+                                      ej = c("income", "disadvantage*")
+                                ))
+
 
 #### we need to play with the residual and use that to gauge model GOF
 ### e.g., how does altering the number of "other" topics shape semantic coherence, modularity, etc.
 
-#check results of different Ks
-set.seed(1234)
-lda_seed1 <- textmodel_seededlda(dfmt, c(mgmt_dict, implmnt_dict), min_termfreq = 15, max_iter = 500, residual = 20)
-terms1 <- terms(lda_seed1, n = 15)
-terms1
+#get model results for different Ks
+f <- function(k, dfmt, dict) {
+  seed_model <- textmodel_seededlda(dfmt, dict, min_termfreq = 15, max_iter = 500, residual = k)
+  return(seed_model)
+}
+kvals <- seq(5, 40, 5)
+models <- setNames(lapply(kvals, f, dfmt = dfmt, dict = c(mgmt_dict, implmnt_dict)), as.character(kvals))
+models <- saveRDS(models, file = "data/int_data/seededModelsKs.RDS")
+models <- readRDS("data/int_data/seededModelsKs.RDS")
 
-set.seed(2345)
-lda_seed2 <- textmodel_seededlda(dfmt, c(mgmt_dict, implmnt_dict), min_termfreq = 15,max_iter = 500, residual = 40)
-terms2 <- terms(lda_seed1, n = 15)
-terms2
+termsK5 <- as.data.frame(terms(models[[1]], n = 20), ) # top 20 words per topic
+thetaK5 <- as.data.frame(models[[1]]$theta) # give topic-document probabilities
+phiK5 <- as.data.frame(models[[1]]$phi) # gives word-topic probabilities
 
-set.seed(3456)
-lda_seed3 <- textmodel_seededlda(dfmt, c(mgmt_dict, implmnt_dict), min_termfreq = 15,max_iter = 500, residual = 30)
-terms3 <- terms(lda_seed1, n = 15)
-terms3
-
-set.seed(8907)
-lda_seed4 <- textmodel_seededlda(dfmt, c(mgmt_dict, implmnt_dict), min_termfreq = 15, max_iter = 500, residual = 10)
-terms4 <- terms(lda_seed4, n = 15)
-terms4
-
-set.seed(4567)
-lda1 <- textmodel_lda(dfmt, k = 30, max_iter = 500)
-termslda1 <- terms(lda1)
-termslda1
-
-set.seed(5678)
-lda2 <- textmodel_lda(dfmt, k = 50, max_iter = 500)
-termslda2 <- terms(lda2)
-termslda2
-#i dont know if any of these are very good or not
-
-#proportions of doc per topic really wild dist.
-docstheta <- as.data.frame(lda_seed1$theta[,1:15])
-boxplot(docstheta)
+terms(models[[4]])
 
 
-library(dplyr)
-#metadata
-cwpp_vars <- sf::st_read("data/int_data/cwpp_vars/cwpp_phys.shp")
-meta <- as.data.frame(tx_files) 
-meta$base <- str_replace(meta$tx_files, "\\.txt", "")
-meta$base <- str_replace(meta$base, ".{5}$", "")
-meta <- merge(meta, cwpp_vars, by.x = 'base', by.y = 'Name') %>%
-  select(-c("NA_"))
+## stm?????
+#assign metadata to dfm
+meta <- read.csv("data/int_data/docmeta.csv")
+meta <- meta[meta$tx_files %in% docnames(dfmt),]
+meta_theta[is.na(meta_theta)] <- 0 # i think this tracks
+docvars(dfmt) <- meta
+# my_dfm <- dfm_subset(dfmt, ntoken(dfmt) >= 2000) 
+library(stm)
+#convert to stm
+dfmstm <- convert(dfmt, to = "stm")
+kvals <- seq(5, 40, 5)
+findk <- searchK(dfmstm$documents, dfmstm$vocab, K = kvals, verbose = TRUE)
+findk$results
+compare <- data.frame("K" = kvals, 
+                   "Coherence" = unlist(findk$results$semcoh),
+                   "Exclusivity" = unlist(findk$results$exclus))
 
-#distribution of topic props and meta vars is very wonky
+
+stm15 <- stm(dfmstm$documents, dfmstm$vocab, K = 15, prevalence = ~year)
+# mean_exp + Conifer + Shrubland + all_public + RPL_theme1 + RPL_theme2 + RPL_theme3 + RPL_theme4
+stm20 <- stm(dfmstm$documents, dfmstm$vocab, K = 20, prevalence = ~Conifer)
+plot(stm15)
+plot(stm20)
+labelTopics(stm15,topics = c(1:15), n=5)
+#remove URLs did not work on all
 
 
+
+## notes from datalab Carl
+## export seededlda to csv (topic-word distributions and document-topic distributions) and then get into ldaviz
+## run mathematical analyses for potential topics to justify hyperparameters 
+## one hyperparsameter controls shape of distribution of theta (words to topics), defend the decision on that one -- probably want a smoother curve rather than giant long tail bc vocab is likely less varied than standard english literature library
+## compare dtm to standard 
+## other distribution is topic - document 
+
+## review stopwords list 
+## named entity recognition R -- 
+
+## text mining datalab workshop series
 
 
