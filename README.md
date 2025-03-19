@@ -1,2 +1,2 @@
 # inyo
-analysis of CWPPs for California 
+topic modeling content in community wildfire protection plans in California
